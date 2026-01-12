@@ -1,0 +1,147 @@
+name: Release - Build & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    name: Build Release ${{ matrix.os }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: Windows
+            arch: x64
+            runner: windows-latest
+            cmake_args: -A x64
+            artifact_name: ads-scanner.exe
+            archive_name: ads-scanner-windows-x64.zip
+            
+          - os: macOS
+            arch: x64
+            runner: macos-13
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64
+            artifact_name: ads-scanner
+            archive_name: ads-scanner-macos-x64.tar.gz
+            
+          - os: macOS
+            arch: arm64
+            runner: macos-latest
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64
+            artifact_name: ads-scanner
+            archive_name: ads-scanner-macos-arm64.tar.gz
+            
+          - os: Linux
+            arch: x64
+            runner: ubuntu-latest
+            cmake_args: ""
+            artifact_name: ads-scanner
+            archive_name: ads-scanner-linux-x64.tar.gz
+            
+          - os: Linux
+            arch: arm64
+            runner: ubuntu-latest
+            cmake_args: -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc
+            artifact_name: ads-scanner
+            archive_name: ads-scanner-linux-arm64.tar.gz
+            apt_packages: "crossbuild-essential-arm64"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libcurl4-openssl-dev nlohmann-json3-dev
+          if [ -n "${{ matrix.apt_packages }}" ]; then
+            sudo apt-get install -y ${{ matrix.apt_packages }}
+          fi
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake curl nlohmann-json
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install cmake curl nlohmann-json -y
+
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cmake -S . -B build ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel ${{ runner.os == 'Windows' && '4' || '$(nproc)' }}
+
+      - name: Copy binary and resources
+        run: |
+          mkdir -p release-artifacts
+          cp build/bin/${{ matrix.artifact_name }} release-artifacts/
+          if [ -f "kufar-configuration.json.example" ]; then
+            cp kufar-configuration.json.example release-artifacts/
+          fi
+          if [ -f "README.md" ]; then
+            cp README.md release-artifacts/
+          fi
+        shell: bash
+
+      - name: Create archive (tar.gz)
+        if: runner.os != 'Windows'
+        run: |
+          cd release-artifacts
+          tar -czf ../${{ matrix.archive_name }} .
+          cd ..
+
+      - name: Create archive (zip)
+        if: runner.os == 'Windows'
+        run: |
+          Compress-Archive -Path release-artifacts/* -DestinationPath ${{ matrix.archive_name }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: binaries-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ matrix.archive_name }}
+          retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: ./artifacts
+
+      - name: Create Release Notes
+        run: |
+          VERSION=${{ github.ref_name }}
+          echo "# Release $VERSION" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "## Downloads" >> RELEASE_NOTES.md
+          find ./artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" \) | sort | while read file; do
+            filename=$(basename "$file")
+            echo "- [$filename](./releases/download/$VERSION/$filename)" >> RELEASE_NOTES.md
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

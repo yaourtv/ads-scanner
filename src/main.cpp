@@ -230,18 +230,9 @@ int main(int argc, char **argv) {
         for (auto requestConfiguration :
             programConfiguration.kufarConfiguration) {
             unsigned int sentCount = 0;
-            vector<int> currentAdIds;
 
             try {
                 vector<Ad> currentAds = getAds(requestConfiguration);
-
-                // Collect all current ad IDs
-                for (const auto &ad : currentAds) {
-                    currentAdIds.push_back(ad.id);
-                }
-
-                // Clean up cache - remove ads no longer in API
-                cleanupCacheByIds(cachedAds, currentAdIds);
 
                 // Process each ad
                 for (const auto &advert : currentAds) {

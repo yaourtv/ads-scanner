@@ -1,0 +1,69 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  cppcheck:
+    name: Static Analysis (cppcheck)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          cppcheck --enable=all --suppress=missingIncludeSystem \
+            --suppress=unusedFunction --suppress=unmatchedSuppression \
+            --output-file=cppcheck-report.txt \
+            src/ include/ || true
+          
+          if grep -q "error" cppcheck-report.txt; then
+            echo "❌ Cppcheck found issues:"
+            cat cppcheck-report.txt
+            exit 1
+          else
+            echo "✓ No critical issues found"
+          fi
+
+  clang-format:
+    name: Format Check (clang-format)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get install -y clang-format
+
+      - name: Check code formatting
+        run: |
+          find src include -name "*.cpp" -o -name "*.hpp" | while read file; do
+            if ! clang-format --dry-run --Werror "$file" > /dev/null 2>&1; then
+              echo "❌ $file is not formatted correctly"
+              clang-format --output-replacements-xml "$file" | head -20
+            fi
+          done
+          echo "ℹ️  Run: clang-format -i src/*.cpp include/*.hpp"
+
+  cmake-lint:
+    name: CMake Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install cmakelint
+        run: pip install cmakelint
+
+      - name: Run cmakelint
+        run: cmakelint CMakeLists.txt || true

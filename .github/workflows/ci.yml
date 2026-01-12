@@ -1,0 +1,146 @@
+name: CI - Multi-Platform Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows
+          - os: Windows
+            arch: x64
+            runner: windows-latest
+            cmake_args: -A x64
+            
+          # macOS
+          - os: macOS
+            arch: x64
+            runner: macos-13
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64
+            
+          - os: macOS
+            arch: arm64
+            runner: macos-latest
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64
+            
+          # Linux
+          - os: Linux
+            arch: x64
+            runner: ubuntu-latest
+            cmake_args: ""
+            
+          - os: Linux
+            arch: arm64
+            runner: ubuntu-latest
+            cmake_args: -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc
+            apt_packages: "crossbuild-essential-arm64"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libcurl4-openssl-dev nlohmann-json3-dev
+          if [ -n "${{ matrix.apt_packages }}" ]; then
+            sudo apt-get install -y ${{ matrix.apt_packages }}
+          fi
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake curl nlohmann-json
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install cmake curl nlohmann-json -y
+          
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cmake -S . -B build ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Build
+        run: |
+          cmake --build build --config Release --parallel ${{ runner.os == 'Windows' && '4' || '$(nproc)' }}
+
+      - name: Test (check binary exists)
+        run: |
+          if [ -f "build/bin/ads-scanner" ] || [ -f "build/bin/ads-scanner.exe" ]; then
+            echo "✓ Binary built successfully"
+          else
+            echo "✗ Binary not found"
+            exit 1
+          fi
+        shell: bash
+
+  pr-checks:
+    name: PR Validation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR title format
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          if [[ ! "$PR_TITLE" =~ ^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?:\ .+ ]]; then
+            echo "❌ PR title should follow format: type(scope): description"
+            echo "   Valid types: feat, fix, docs, style, refactor, test, chore"
+            exit 1
+          fi
+          echo "✓ PR title is valid"
+
+      - name: Check for large files
+        run: |
+          # Warn if any files > 10MB
+          find . -type f -size +10M ! -path './.git/*' | while read file; do
+            echo "⚠ Large file detected: $file"
+          done
+          echo "✓ Large file check complete"
+
+      - name: Verify CMakeLists.txt is valid
+        run: |
+          if grep -q "cmake_minimum_required" CMakeLists.txt; then
+            echo "✓ CMakeLists.txt has required cmake_minimum_required"
+          else
+            exit 1
+          fi
+
+  security-check:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+        continue-on-error: true
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+        continue-on-error: true
