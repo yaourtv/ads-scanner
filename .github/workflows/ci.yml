@@ -51,6 +51,22 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           if [ "${{ matrix.arch }}" = "arm64" ]; then
+            # Use both archive and ports sources so arm64 packages are available
+            sudo bash -c 'cat >/etc/apt/sources.list << "EOF"
+            Types: deb
+            URIs: http://archive.ubuntu.com/ubuntu/
+            Suites: noble noble-updates noble-backports noble-security
+            Components: main universe restricted multiverse
+            Architectures: amd64 i386
+            Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+            Types: deb
+            URIs: http://ports.ubuntu.com/ubuntu-ports/
+            Suites: noble noble-updates noble-backports noble-security
+            Components: main universe restricted multiverse
+            Architectures: arm64
+            Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+            EOF'
             sudo dpkg --add-architecture arm64
             sudo apt-get update -o Acquire::Check-Valid-Until=false || true
             sudo apt-get install -y \
@@ -74,13 +90,25 @@ jobs:
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install cmake curl -y
+          choco install cmake git -y
+
+      - name: Install curl via vcpkg (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl:x64-windows
+          echo "VCPKG_ROOT=$PWD" | Out-File -FilePath $env:GITHUB_ENV -Append
+        shell: pwsh
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
         run: |
           if (!(Test-Path build)) { New-Item -ItemType Directory -Path build | Out-Null }
-          cmake -S . -B build ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          $toolchain = ""
+          if ($env:VCPKG_ROOT) { $toolchain = "-DCMAKE_TOOLCHAIN_FILE=$($env:VCPKG_ROOT)\scripts\buildsystems\vcpkg.cmake" }
+          cmake -S . -B build ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $toolchain
         shell: pwsh
 
       - name: Configure CMake (Unix)
