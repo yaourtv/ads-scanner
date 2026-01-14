@@ -14,34 +14,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows
-          - os: Windows
-            arch: x64
-            runner: windows-latest
-            cmake_args: -A x64
-            
-          # macOS
           - os: macOS
             arch: x64
-            runner: macos-13
+            runner: macos-15-intel
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64
-            
+
           - os: macOS
             arch: arm64
             runner: macos-latest
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64
-            
-          # Linux
+
           - os: Linux
             arch: x64
             runner: ubuntu-latest
             cmake_args: ""
-            
-          - os: Linux
-            arch: arm64
-            runner: ubuntu-latest
-            cmake_args: -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc
-            apt_packages: "crossbuild-essential-arm64"
 
     steps:
       - name: Checkout code
@@ -51,29 +37,24 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake libcurl4-openssl-dev nlohmann-json3-dev
-          if [ -n "${{ matrix.apt_packages }}" ]; then
-            sudo apt-get install -y ${{ matrix.apt_packages }}
-          fi
+          sudo apt-get install -y \
+            cmake \
+            libcurl4-openssl-dev \
+            nlohmann-json3-dev
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install cmake curl nlohmann-json
+          brew install cmake curl
 
-      - name: Install dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install cmake curl nlohmann-json -y
-          
-      - name: Configure CMake
+      - name: Configure CMake (Unix)
         run: |
           mkdir -p build
           cmake -S . -B build ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build
         run: |
-          cmake --build build --config Release --parallel ${{ runner.os == 'Windows' && '4' || '$(nproc)' }}
+            cmake --build build --config Release --parallel $(nproc)
 
       - name: Test (check binary exists)
         run: |
