@@ -19,24 +19,24 @@ jobs:
             arch: x64
             runner: windows-latest
             cmake_args: -A x64
-            
+
           # macOS
           - os: macOS
             arch: x64
             runner: macos-15-intel
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64
-            
+
           - os: macOS
             arch: arm64
             runner: macos-latest
             cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64
-            
+
           # Linux
           - os: Linux
             arch: x64
             runner: ubuntu-latest
             cmake_args: ""
-            
+
           - os: Linux
             arch: arm64
             runner: ubuntu-latest
@@ -50,18 +50,16 @@ jobs:
       - name: Install dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
           if [ "${{ matrix.arch }}" = "arm64" ]; then
-            # Enable arm64 architecture for cross-compilation and install
-            # arm64 development packages so the aarch64 compiler can see curl headers.
             sudo dpkg --add-architecture arm64
-            sudo apt-get update
+            sudo apt-get update -o Acquire::Check-Valid-Until=false || true
             sudo apt-get install -y \
               cmake \
               nlohmann-json3-dev \
               crossbuild-essential-arm64 \
               libcurl4-openssl-dev:arm64
           else
+            sudo apt-get update
             sudo apt-get install -y \
               cmake \
               libcurl4-openssl-dev \
@@ -77,8 +75,16 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           choco install cmake curl -y
-          
-      - name: Configure CMake
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if (!(Test-Path build)) { New-Item -ItemType Directory -Path build | Out-Null }
+          cmake -S . -B build ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        shell: pwsh
+
+      - name: Configure CMake (Unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p build
           cmake -S . -B build ${{ matrix.cmake_args }} -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
