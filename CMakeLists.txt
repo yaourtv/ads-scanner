@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.14)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,7 +11,16 @@ project(
 )
 
 include_directories(include)
-find_package(nlohmann_json REQUIRED)
+
+# nlohmann/json is header-only; fetch it in a cross-platform way instead of
+# relying on system packages on every OS.
+include(FetchContent)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.3
+)
+FetchContent_MakeAvailable(nlohmann_json)
 
 add_executable(
     ads-scanner
@@ -23,11 +32,10 @@ add_executable(
     src/main.cpp
 )
 
+find_package(CURL REQUIRED)
+
 target_link_libraries(ads-scanner
     PRIVATE
-    curl
+        CURL::libcurl
+        nlohmann_json::nlohmann_json
 )
-
-if (nlohmann_json_FOUND)
-    target_link_libraries(ads-scanner PRIVATE nlohmann_json::nlohmann_json)
-endif()
