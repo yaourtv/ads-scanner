@@ -2,6 +2,7 @@
 #include "kufar.hpp"
 #include "networking.hpp"
 #include "helperfunctions.hpp"
+#include "logging.hpp"
 #include <iostream>
 #include <sstream> 
 
@@ -160,7 +161,15 @@ namespace Kufar {
         }
 
         string rawJson = getJSONFromURL(urlStream.str());
-        json ads = json::parse(rawJson).at("ads");
+        json ads;
+        try {
+            json j = json::parse(rawJson);
+            ads = j.at("ads");
+        } catch (const std::exception &e) {
+            Log::error("getAds: JSON parse or .at(ads) failed: " + string(e.what()) +
+                       " (response length=" + to_string(rawJson.size()) + ")");
+            throw;
+        }
 
         for (const auto &ad : ads) {
             Ad advert;

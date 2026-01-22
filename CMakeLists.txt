@@ -27,6 +27,7 @@ add_executable(
 
     src/kufar.cpp
     src/helperfunctions.cpp
+    src/logging.cpp
     src/telegram.cpp
     src/networking.cpp
     src/main.cpp

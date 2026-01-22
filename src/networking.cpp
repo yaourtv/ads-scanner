@@ -1,7 +1,9 @@
 #include <iostream>
+#include <string>
 #include <curl/curl.h>
 #include "networking.hpp"
 #include "helperfunctions.hpp"
+#include "logging.hpp"
 
 namespace Networking {
     using std::string;
@@ -28,31 +30,38 @@ namespace Networking {
 
     string getJSONFromURL(const string &url) {
         DEBUG_MSG("[URL: " << url << "]");
-        cout << "[networking.cpp: url = " << url << " ]" << endl;
+        if (Log::isInitialized())
+            Log::info("HTTP GET (url length=" + std::to_string(url.size()) + ")");
 
-        //curl_global_init(CURL_GLOBAL_DEFAULT);
         auto curl = curl_easy_init();
         string responseString;
 
-        if (curl) {
-            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
-            curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 0L);
-            curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10);
-
-            string headerString;
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunction);
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseString);
-            curl_easy_setopt(curl, CURLOPT_HEADERDATA, &headerString);
-            
-            curl_easy_perform(curl);
-            curl_easy_cleanup(curl);
-            curl_global_cleanup();
-            curl = NULL;
+        if (!curl) {
+            if (Log::isInitialized()) Log::error("getJSONFromURL: curl_easy_init failed");
+            return "";
         }
-        cout << "[networking.cpp: responseString = "
-                << responseString << " ]" << endl;
+
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 0L);
+        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10);
+
+        string headerString;
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunction);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseString);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &headerString);
+
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK) {
+            if (Log::isInitialized())
+                Log::error("getJSONFromURL: curl_easy_perform failed: " + string(curl_easy_strerror(res)));
+            curl_easy_cleanup(curl);
+            return "";
+        }
+        if (Log::isInitialized())
+            Log::info("HTTP response size=" + std::to_string(responseString.size()));
+        curl_easy_cleanup(curl);
         return responseString;
     }
 }
